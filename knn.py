@@ -203,20 +203,27 @@ def init():
 	gl.vectors = np.load('./data/author_ma_vetor.npy')
 	gl.matrix = np.load('./data/author_ma.npy')
 
-def back_test(search_nodes, k, cos_min, max_num, min_num, links):
+def back_test(search_nodes, k, cos_min, max_num, min_num):
 	time_start0 = time.clock()
 	global gl
 	gl.max_num = max_num
 	gl.min_num = min_num
-	f2 = './Results/UNDIR_RESULTS_.csv'
-	tmp = np.loadtxt(f2, dtype = np.str, delimiter = ",")
-	data = tmp[1:, 0:len(tmp[0]) - 1].astype('int64')
 	vectors_obj = {}
 	vectors_list = []
-	for i in data:
-		vector = i[1:]
-		vectors_obj[search_nodes[i[0]]] = vector
+	for i in search_nodes:
+		vector = gl.vectors[i]
+		vectors_obj[i] = vector
 		vectors_list.append(vector)
+
+	# f2 = './Results/UNDIR_RESULTS_.csv'
+	# tmp = np.loadtxt(f2, dtype = np.str, delimiter = ",")
+	# data = tmp[1:, 0:len(tmp[0]) - 1].astype('int64')
+	# vectors_obj = {}
+	# vectors_list = []
+	# for i in data:
+	# 	vector = i[1:]
+	# 	vectors_obj[search_nodes[i[0]]] = vector
+	# 	vectors_list.append(vector)
 
 	time_start_read = time.clock()
 	gl.nbrs = NearestNeighbors(n_neighbors = len(gl.vectors), algorithm = "auto", metric = 'cosine').fit(
@@ -397,12 +404,13 @@ def gl_search_nodes_extract(gl, matrix, nodes, opt = ''):  # nodes : id
 
 
 if __name__ == '__main__':
-	search_nodes = [0, 1, 2, 3, 4]
+	# search_nodes = [0, 1, 2, 3, 4]
+	search_nodes = [1, 799, 1854]
 	k = 100
 	cos_min = 0.01
 	max_num = 100
 	min_num = 5
 	links = [[0, 1], [0, 2], [0, 3], [0, 4]]
 	init()
-	res = back_test(search_nodes, k, cos_min, max_num, min_num, links)
+	res = back_test(search_nodes, k, cos_min, max_num, min_num)
 	print(res)

@@ -185,7 +185,7 @@ class GK_WL():
 def compare(a, b, labela, labelb):
 	g0 = nx.from_numpy_matrix(a)
 	g1 = nx.from_numpy_matrix(b)
-	for i in g0.nodes:
+	for i in g0.nodes():
 		g0.nodes[i]['node_label'] = labela[i]
 	for i in g1.nodes():
 		g1.nodes[i]['node_label'] = labelb[i]
