@@ -1,14 +1,8 @@
 # coding=utf-8
 from sklearn.neighbors import NearestNeighbors
-import networkx as nx
-import os
 import numpy as np
 import copy
-import time
-import networkx as nx
-import random
-import json
-from scipy.sparse import csr_matrix, csgraph
+from scipy.sparse import csgraph
 from gk_weisfeiler_lehman import compare
 
 from sklearn.cluster import DBSCAN
@@ -40,34 +34,40 @@ class S3():
 		self.sim_thrsd = 0.99
 		self.k = 100
 		self.group = 0.01
+		self.exemplar_nodes = []
+		self.exemplar_vectors = []
 
 	def set_k(self, k):
 		self.k = k
 	
-	def set_max_nodes(self, max):
+	def max_nodes_threshold(self, max):
 		self.max_nodes_thrsd = max
 	
-	def set_min_nodes(self, min):
+	def min_nodes_threshold(self, min):
 		self.min_nodes_thrsd = min
 
-	def set_similarity_threshold(self, sim_thrsd):
+	def similarity_threshold(self, sim_thrsd):
 		self.sim_thrsd = sim_thrsd
 
-	def gl_dbscan(self, nodes, vectors_list = None):
-		if vectors_list is None:
-			vectors_list = []
-			for i in nodes:
-				vector = self.embedding[i]
-				vectors_list.append(vector)
+	def exemplar(self, nodes):
+		self.exemplar_nodes = nodes
+		self.exemplar_vectors_list = []
+		self.exemplar_vectors_dict = {}
+		for i in nodes:
+			vector = self.embedding[i]
+			self.exemplar_vectors_dict[i] = vector
+			self.exemplar_vectors_list.append(vector)
 
+
+	def _exemplar_dbscan(self):
 		dbs = DBSCAN(eps = self.group, min_samples = 2,
 					metric = 'euclidean', metric_params = None, algorithm = 'auto', leaf_size = 30, p = None,
-					n_jobs = 1).fit(vectors_list)
+					n_jobs = 1).fit(self.exemplar_vectors_list)
 
-		label_graph = dbs.fit_predict(vectors_list)
+		label_graph = dbs.fit_predict(self.exemplar_vectors_list)
 		r = {}
 		for i in range(len(label_graph)):
-			n = nodes[i]
+			n = self.exemplar_nodes[i]
 			label = label_graph[i]
 			if label not in r:
 				r[label] = []
@@ -81,11 +81,10 @@ class S3():
 		label_arr.extend(list(r.values()))
 		return label_arr
 	
-	def gl_search_nodes_extract(self, nodes):  # nodes : id
+	def gl_search_nodes_extract(self):  # nodes : id
 		"""do clustering on the exemplar nodes(dbscan)
-
 			This function can be used to generate the graph after cluster that
-			we called type graph. In the type graph, each type node represents
+			we call type graph. In the type graph, each type node represents
 			one cluster conducted by the dbscan algorithm so that each type node
 			in the type graph contains several nodes of the original graph. We
 			can establish links between type nodes if there are links between
@@ -93,9 +92,6 @@ class S3():
 
 			Parameters
 			----------
-			nodes: numpy array
-				the exemplar nodes to be searched
-
 			Return
 			------
 			{
@@ -108,9 +104,9 @@ class S3():
 					origin links between the exemplar nodes.
 			}
 		"""
-		nodes = list(map(lambda x: int(x), nodes))
+		nodes = list(map(lambda x: int(x), self.exemplar_nodes))
 		res = {'type_list': [], 'type_links': [], 'node_links': []}
-		label_arr = self.gl_dbscan(nodes)
+		label_arr = self._exemplar_dbscan()
 		res['type_list'] = label_arr
 		node_to_type = {}
 		for i in range(len(label_arr)):
@@ -135,7 +131,6 @@ class S3():
 						x_type) not in type_set:
 					type_set.add(str(x_type) + '+' + str(y_type))
 					res['type_links'].append({'source': x_type, 'target': y_type})
-
 		return res
 
 	def sub_knn_graph(self, knn_nodes_list):
@@ -201,16 +196,13 @@ class S3():
 			k += 1
 		return res  # 排序好，去除一个
 
-	def sub_knn_graph_match_new(self, search_nodes, knn_nodes_graph, distant, vectors = []):
-		draw_f = True
-		if vectors == []:
-			draw_f = False
+	def sub_knn_graph_match_new(self, knn_nodes_graph):
 		match_label = {}
 		save_nodes = set([])
 		r = {}
 		rz = 0
 		# knn_nodes_graph 已经排好序 去掉只有一个点的了
-		search_nodes_arg_np = np.array(search_nodes)
+		search_nodes_arg_np = np.array(self.exemplar_nodes)
 		# search_nodes_arg_ma = gl.matrix[search_nodes_arg_np[:, None], search_nodes_arg_np].toarray()
 		# for i in range(len(search_nodes)):
 		#
@@ -230,28 +222,12 @@ class S3():
 				# a_degree = len(np.where(search_nodes_arg_ma[a_i]==1)[0])
 				for b_i in range(len(sub_list)):
 					b = sub_list[b_i]
-					# b_degree = len(np.where(sub_list_ma[b_i] == 1)[0])
-					# if len(distant) == 0:
-					if draw_f:
-						vector1 = vectors[a]  # 这里是新的向量
-						vector2 = self.embedding[b]
-						# if gl.dis == 'e':
-						# 	d[a][b] = np.linalg.norm(vector1 - vector2)
-						# else:
-						d[a][b] = 0.5 + 0.5 * np.dot(vector1, vector2) / (
-								np.linalg.norm(vector1) * (np.linalg.norm(vector2)))
-
-					# 	d[a][b] = 100
-					else:
-						if a in distant and str(b) in distant[a]:
-							d[a][b] = distant[a][str(b)]
-						else:
-							d[a][b] = 100
-				# if b_degree-a_degree>0:
-				# 	d[a][b] = math.sqrt(b_degree-a_degree)
-				# else:
-				# 	d[a][b] = abs(b_degree-a_degree)
+					vector1 = self.exemplar_vectors_dict[a]  # 这里是新的向量
+					vector2 = self.embedding[b]
+					d[a][b] = 0.5 + 0.5 * np.dot(vector1, vector2) / (
+							np.linalg.norm(vector1) * (np.linalg.norm(vector2)))
 				d[a] = sorted(d[a].items(), key = lambda item: item[1])
+			
 			search_index_list = list(range(len(search_nodes)))
 			sub_l = 0
 			while sub_l != len(sub_list):
@@ -276,25 +252,17 @@ class S3():
 			rz += 1
 		return r, match_label
 	
-	def search(self, search_nodes):
-		# find the vectors of search nodes
-		vectors_obj = {}
-		vectors_list = []
-		for i in search_nodes:
-			vector = self.embedding[i]
-			vectors_obj[i] = vector
-			vectors_list.append(vector)
-
+	def search(self):
 		# find the knns of search nodes
 		# ? some problem with the n_neighbors parameter
 		nbrs = NearestNeighbors(n_neighbors = len(self.embedding), algorithm = "auto", metric = 'cosine').fit(self.embedding)
-		distances, knn_nodes = nbrs.kneighbors(vectors_list)
+		distances, knn_nodes = nbrs.kneighbors(self.exemplar_vectors_list)
 		max_e = np.max(distances)
 		min_e = np.min(distances)
 
 		# filter out some unsimilar nodes
 		knn_nodes_set = set([])
-		for i in range(len(search_nodes)):
+		for i in range(len(self.exemplar_nodes)):
 			# Find the most like elements of the first (1-self.sim_thrsd)
 			# ? some problem with the meaning the sim_thrsd(cos_min)
 			index = bisect_ch(distances[i], (max_e - min_e) * (1 - self.sim_thrsd) + min_e)
@@ -302,9 +270,9 @@ class S3():
 				index = self.k
 			knn_nodes_set = knn_nodes_set | set(knn_nodes[i][0:index])
 		
-		type_graph = self.gl_search_nodes_extract(search_nodes)
+		type_graph = self.gl_search_nodes_extract()
 		knn_nodes_graph = self.sub_knn_graph(knn_nodes_set)
-		knn_graph_match, mathch_label = self.sub_knn_graph_match_new(search_nodes, knn_nodes_graph, [], vectors_obj)
+		knn_graph_match, mathch_label = self.sub_knn_graph_match_new(knn_nodes_graph)
 		knn_type_graphs = [[]] * len(knn_graph_match.keys())
 
 		r = {}
@@ -320,7 +288,6 @@ class S3():
 				knn_type_graphs[int(i)][r[int(j)]].extend(vj)  # !!!
 
 		simi_obj = {}
-		time_start1 = time.clock()
 		for i, v in knn_nodes_graph.items():
 			v_np = np.array(v)
 			labels = []
@@ -328,7 +295,7 @@ class S3():
 				labels.append(mathch_label[i][j])
 			v_ma = self.matrix[v_np[:, None], v_np]
 			labels_set = set(labels)
-			search_nodes_now = list(filter(lambda x: x in labels_set, search_nodes))
+			search_nodes_now = list(filter(lambda x: x in labels_set, self.exemplar_nodes))
 			search_nodes_now_np = np.array(search_nodes_now)
 			search_nodes_now_ma = self.matrix[search_nodes_now_np[:, None], search_nodes_now_np]
 			simi_obj[str(i)] = compare(search_nodes_now_ma, v_ma, search_nodes_now, labels)
@@ -352,11 +319,10 @@ class S3():
 
 
 if __name__ == '__main__':
-	# search_nodes = [0, 1, 2, 3, 4]
 	search_nodes = [1, 799, 1854]
 	vectors = np.load('./data/author_ma_vetor.npy')
 	matrix = np.load('./data/author_ma.npy')
 	s = S3(matrix, vectors)
-	res = s.search(search_nodes)
-	# res = back_test(search_nodes, k, cos_min, max_num, min_num)
+	s.exemplar(search_nodes)
+	res = s.search()
 	print(res)
