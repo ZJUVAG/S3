@@ -33,7 +33,7 @@ class S3():
 		self.max_nodes_thrsd = 100
 		self.sim_thrsd = 0.99
 		self.k = 100
-		self.group = 0.01
+		self.epsilon = 0.01
 		self.exemplar_nodes = []
 		self.exemplar_vectors = []
 
@@ -60,7 +60,7 @@ class S3():
 
 
 	def _exemplar_dbscan(self):
-		dbs = DBSCAN(eps = self.group, min_samples = 2,
+		dbs = DBSCAN(eps = self.epsilon, min_samples = 2,
 					metric = 'euclidean', metric_params = None, algorithm = 'auto', leaf_size = 30, p = None,
 					n_jobs = 1).fit(self.exemplar_vectors_list)
 
