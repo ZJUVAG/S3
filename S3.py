@@ -47,6 +47,7 @@ class S3():
 		self.exemplar_knn_maps = None
 		self.knn_exemplar_maps = None
 		self.knn_compound_graphs = None
+		self.connected_components_similarity = None
 
 	def set_k(self, k):
 		self.k = k
@@ -68,6 +69,7 @@ class S3():
 		self.exemplar_knn_maps = None
 		self.knn_exemplar_maps = None
 		self.knn_compound_graphs = None
+		self.connected_components_similarity = None
 		self.exemplar_vectors_list = []
 		self.exemplar_vectors_dict = {}
 		for i in nodes:
@@ -96,6 +98,147 @@ class S3():
 			del r[-1]
 		label_arr.extend(list(r.values()))
 		return label_arr
+	
+	def compute_connected_components(self, nodes_list):
+		""" get the connected components with given nodes list
+			filter out the components with too large size（ >= max_nodes_thrsd )
+			and the components with too small size ( < min_nodes_thrsd )
+
+			Parameters
+			----------
+			nodes_list: list
+
+			Return
+			------
+			res: dict
+				key: the sequence, value: the components
+		"""
+		stack = np.array(nodes_list)
+
+		if len(stack) == 0:
+			return {}
+
+		# the matrix of the knn nodes
+		ma = self.matrix[stack[:, None], stack]
+
+		# each node will have a label
+		# which represents the connected components it belongs to.
+		num, labels = csgraph.connected_components(ma, directed = False)
+
+		connected_components = {} # key: label, value: list of nodes
+		for i in range(len(labels)):
+			if str(labels[i]) not in connected_components:
+				connected_components[str(labels[i])] = []
+			connected_components[str(labels[i])].append(int(stack[i]))
+
+		# sort the connected components
+		sorted_connected_components = sorted(connected_components.items(), key = lambda item: len(item[1]), reverse = True)
+
+		connected_components_filtered = []
+		for i, nodes_in_components in sorted_connected_components:
+			if len(nodes_in_components) >= self.max_nodes_thrsd:
+				continue
+			if len(nodes_in_components) < self.min_nodes_thrsd:
+				break
+			connected_components_filtered.append(nodes_in_components)
+		return connected_components_filtered
+
+	def map_knn_connected_components_to_exemplar(self):
+		""" map nodes in the knn connected components to exemplar nodes,
+			establish correspondence between them
+
+			Parameters
+			----------
+			knn_connected_components: list
+			[
+				[knn_nodes_00, knn_nodes_01, ...],
+				[knn_nodes_10, knn_nodes_11, ...],
+				...
+			]
+
+			Return
+			------
+			exemplar_knn_maps: dict
+			example:
+			{
+				0: {
+					exemplar0: [knn_nodes_00, knn_nodes_01, ...],
+					exemplar1: [knn_nodes_10, knn_nodes_11, ...],
+					...
+				},
+				...
+			}
+			knn_exemplar_maps: dict
+			the reverse of exemplar_knn_maps, example:
+			{
+				0: {
+					knn_nodes_0: exemplar0,
+					knn_nodes_1: exemplar1
+				},
+				...
+			}
+		"""
+		if self.exemplar_knn_maps is not None and self.knn_exemplar_maps is not None:
+			return self.exemplar_knn_maps, self.knn_exemplar_maps
+		
+		if self.exemplar_nodes is None or len(self.exemplar_nodes) <= 0:
+			raise Exception("Empty Exemplar, try to use S3.exemplar()!")
+		try:
+			self.knn_connected_components = self.get_knn_connected_components()
+		except Exception:
+			raise Exception
+		else:
+			knn_connected_components = self.knn_connected_components
+
+		mapped_nodes = set([])
+		exemplar_knn_maps = {}
+		knn_exemplar_maps = {}
+		# establish the map from exemplar nodes to the nodes in knn components
+		for seq in range(len(knn_connected_components)):
+			# knn conneceted components nodes
+			knn_nodes = copy.copy(knn_connected_components[seq])
+			exemplar_knn_maps[seq] = {}
+			knn_exemplar_maps[seq] = {}
+			distance = {}
+
+			# calculate the distance matrix between exemplar nodes and knn nodes
+			for i in range(len(self.exemplar_nodes)):
+				exemplar_node = self.exemplar_nodes[i]
+				distance[exemplar_node] = {}
+				for j in range(len(knn_nodes)):
+					knn_node = knn_nodes[j]
+					vector1 = self.exemplar_vectors_dict[exemplar_node] # * prepare for sketch mode
+					vector2 = self.embedding[knn_node]
+					# cosine distance, map [-1, 1) to [0, 1)
+					distance[exemplar_node][knn_node] = 0.5 + 0.5 * np.dot(vector1, vector2) / (
+							np.linalg.norm(vector1) * (np.linalg.norm(vector2)))
+				# sort with ascending order
+				distance[exemplar_node] = sorted(distance[exemplar_node].items(), key = lambda item: item[1])
+			
+			i = 0
+			while i != len(knn_nodes):
+				# evenly distributed
+				exemplar_node = self.exemplar_nodes[i % len(self.exemplar_nodes)]
+				
+				most_similar_knn_node = None
+				# find the most similar knn node which has not been mapped before
+				for j in range(len(distance[exemplar_node])):
+					most_similar_knn_node = distance[exemplar_node][j][0] # the most similar knn node
+					if most_similar_knn_node not in mapped_nodes: # if the node has already been mapped
+						del distance[exemplar_node][j]
+						break
+				
+				if most_similar_knn_node is not None:
+					if exemplar_node not in exemplar_knn_maps[seq]:
+						exemplar_knn_maps[seq][exemplar_node] = []
+					exemplar_knn_maps[seq][exemplar_node].append(most_similar_knn_node)
+					knn_exemplar_maps[seq][most_similar_knn_node] = exemplar_node
+					mapped_nodes.add(most_similar_knn_node)
+					i += 1
+
+		self.exemplar_knn_maps = exemplar_knn_maps
+		self.knn_exemplar_maps = knn_exemplar_maps
+		return exemplar_knn_maps, knn_exemplar_maps
 	
 	def get_exemplar_compound_graph(self): 
 		"""do clustering on the exemplar nodes(dbscan)
@@ -195,133 +338,6 @@ class S3():
 				self.knn_connected_components = self.compute_connected_components(self.knn_nodes)
 				return self.knn_connected_components
 	
-	def compute_connected_components(self, nodes_list):
-		""" get the connected components with given nodes list
-			filter out the components with too large size（ >= max_nodes_thrsd )
-			and the components with too small size ( < min_nodes_thrsd )
-
-			Parameters
-			----------
-			nodes_list: list
-
-			Return
-			------
-			res: dict
-				key: the sequence, value: the components
-		"""
-		stack = np.array(nodes_list)
-
-		if len(stack) == 0:
-			return {}
-
-		# the matrix of the knn nodes
-		ma = self.matrix[stack[:, None], stack]
-
-		# each node will have a label
-		# which represents the connected components it belongs to.
-		num, labels = csgraph.connected_components(ma, directed = False)
-
-		connected_components = {} # key: label, value: list of nodes
-		for i in range(len(labels)):
-			if str(labels[i]) not in connected_components:
-				connected_components[str(labels[i])] = []
-			connected_components[str(labels[i])].append(int(stack[i]))
-
-		# sort the connected components
-		sorted_connected_components = sorted(connected_components.items(), key = lambda item: len(item[1]), reverse = True)
-
-		connected_components_filtered = []
-		for i, nodes_in_components in sorted_connected_components:
-			if len(nodes_in_components) >= self.max_nodes_thrsd:
-				continue
-			if len(nodes_in_components) < self.min_nodes_thrsd:
-				break
-			connected_components_filtered.append(nodes_in_components)
-		return connected_components_filtered
-
-	def map_to_exemplar(self, knn_connected_components):
-		""" map nodes in the knn connected components to exemplar nodes,
-			establish correspondence between them
-
-			Parameters
-			----------
-			knn_connected_components: list
-			[
-				[knn_nodes_00, knn_nodes_01, ...],
-				[knn_nodes_10, knn_nodes_11, ...],
-				...
-			]
-
-			Return
-			------
-			exemplar_knn_maps: dict
-			example:
-			{
-				0: {
-					exemplar0: [knn_nodes_00, knn_nodes_01, ...],
-					exemplar1: [knn_nodes_10, knn_nodes_11, ...],
-					...
-				},
-				...
-			}
-			knn_exemplar_maps: dict
-			the reverse of exemplar_knn_maps, example:
-			{
-				0: {
-					knn_nodes_0: exemplar0,
-					knn_nodes_1: exemplar1
-				},
-				...
-			}
-		"""
-		mapped_nodes = set([])
-		exemplar_knn_maps = {}
-		knn_exemplar_maps = {}
-		# establish the map from exemplar nodes to the nodes in knn components
-		for seq in range(len(knn_connected_components)):
-			# knn conneceted components nodes
-			knn_nodes = copy.copy(knn_connected_components[seq])
-			exemplar_knn_maps[seq] = {}
-			knn_exemplar_maps[seq] = {}
-			distance = {}
-
-			# calculate the distance matrix between exemplar nodes and knn nodes
-			for i in range(len(self.exemplar_nodes)):
-				exemplar_node = self.exemplar_nodes[i]
-				distance[exemplar_node] = {}
-				for j in range(len(knn_nodes)):
-					knn_node = knn_nodes[j]
-					vector1 = self.exemplar_vectors_dict[exemplar_node] # * prepare for sketch mode
-					vector2 = self.embedding[knn_node]
-					# cosine distance, map [-1, 1) to [0, 1)
-					distance[exemplar_node][knn_node] = 0.5 + 0.5 * np.dot(vector1, vector2) / (
-							np.linalg.norm(vector1) * (np.linalg.norm(vector2)))
-				# sort with ascending order
-				distance[exemplar_node] = sorted(distance[exemplar_node].items(), key = lambda item: item[1])
-			
-			i = 0
-			while i != len(knn_nodes):
-				# evenly distributed
-				exemplar_node = self.exemplar_nodes[i % len(self.exemplar_nodes)]
-				
-				most_similar_knn_node = None
-				# find the most similar knn node which has not been mapped before
-				for j in range(len(distance[exemplar_node])):
-					most_similar_knn_node = distance[exemplar_node][j][0] # the most similar knn node
-					if most_similar_knn_node not in mapped_nodes: # if the node has already been mapped
-						del distance[exemplar_node][j]
-						break
-				
-				if most_similar_knn_node is not None:
-					if exemplar_node not in exemplar_knn_maps[seq]:
-						exemplar_knn_maps[seq][exemplar_node] = []
-					exemplar_knn_maps[seq][exemplar_node].append(most_similar_knn_node)
-					knn_exemplar_maps[seq][most_similar_knn_node] = exemplar_node
-					mapped_nodes.add(most_similar_knn_node)
-					i += 1
-				
-		return exemplar_knn_maps, knn_exemplar_maps
-	
 	def get_knn_compound_graphs(self):
 		try:
 			self.exemplar_compound_graph = self.get_exemplar_compound_graph()
@@ -347,54 +363,57 @@ class S3():
 			self.knn_compound_graphs = knn_compound_graphs
 			return knn_compound_graphs
 	
+	def get_connected_components_similarity(self):
+		# connected components similarity, key: components label, value: similarity with exemplar
+		if self.connected_components_similarity is not None and len(self.connected_components_similarity) >= 0:
+			return self.connected_components_similarity
+
+		cnntd_cmpnts_similarity = {}
+		i = 0
+		for conneceted_component_nodes in self.knn_connected_components:
+			labels = [] # the exemplar nodes
+			for j in conneceted_component_nodes:
+				labels.append(self.knn_exemplar_maps[i][j])
+
+			conneceted_component_nodes = np.array(conneceted_component_nodes)
+			conneceted_components_matrix = self.matrix[conneceted_component_nodes[:, None], conneceted_component_nodes]
+
+			labels_set = set(labels)
+			# filter out the exemplar nodes which doesn't have correspondence with knn nodes
+			exemplar_nodes_filtered = list(filter(lambda x: x in labels_set, self.exemplar_nodes))
+			exemplar_nodes_filtered_np = np.array(exemplar_nodes_filtered)
+			exemplar_nodes_filtered_matrix = self.matrix[exemplar_nodes_filtered_np[:, None], exemplar_nodes_filtered_np]
+
+			# get the similarity between exemplare and connected_components
+			cnntd_cmpnts_similarity[i] = compare(exemplar_nodes_filtered_matrix, conneceted_components_matrix, exemplar_nodes_filtered, labels)
+			
+			i += 1
+
+		cnntd_cmpnts_similarity = sorted(cnntd_cmpnts_similarity.items(), key = lambda item: item[1], reverse = True)
+
+		self.connected_components_similarity = cnntd_cmpnts_similarity
+		return cnntd_cmpnts_similarity
+	
+	def get_exemplar_to_knn_nodes_maps(self):
+		if self.exemplar_knn_maps is None:
+			self.exemplar_knn_maps, self.knn_exemplar_maps = self.map_knn_connected_components_to_exemplar()
+		return self.exemplar_knn_maps
+
+	def get_knn_nodes_to_exemplar_maps(self):
+		if self.knn_exemplar_maps is None:
+			self.exemplar_knn_maps, self.knn_exemplar_maps = self.map_knn_connected_components_to_exemplar()
+		return self.knn_exemplar_maps
+
 	def search(self):
 		try:
 			self.exemplar_compound_graph = self.get_exemplar_compound_graph()
 			self.knn_nodes = self.get_knn_nodes()
 			self.knn_connected_components = self.get_knn_connected_components()
 			# establish correnspondence
-			self.exemplar_knn_maps, self.knn_exemplar_maps = self.map_to_exemplar(self.knn_connected_components)
+			self.exemplar_knn_maps, self.knn_exemplar_maps = self.map_knn_connected_components_to_exemplar()
+			self.connected_components_similarity = self.get_connected_components_similarity()
 		except Exception as error:
 			print(error)
-		else:
-			
-			# connected components similarity, key: components label, value: similarity with exemplar
-			cnntd_cmpnts_similarity = {}
-			i = 0
-			for conneceted_component_nodes in self.knn_connected_components:
-				labels = [] # the exemplar nodes
-				for j in conneceted_component_nodes:
-					labels.append(self.knn_exemplar_maps[i][j])
-
-				conneceted_component_nodes = np.array(conneceted_component_nodes)
-				conneceted_components_matrix = self.matrix[conneceted_component_nodes[:, None], conneceted_component_nodes]
-
-				labels_set = set(labels)
-				# filter out the exemplar nodes which doesn't have correspondence with knn nodes
-				exemplar_nodes_filtered = list(filter(lambda x: x in labels_set, self.exemplar_nodes))
-				exemplar_nodes_filtered_np = np.array(exemplar_nodes_filtered)
-				exemplar_nodes_filtered_matrix = self.matrix[exemplar_nodes_filtered_np[:, None], exemplar_nodes_filtered_np]
-
-				# get the similarity between exemplare and connected_components
-				cnntd_cmpnts_similarity[i] = compare(exemplar_nodes_filtered_matrix, conneceted_components_matrix, exemplar_nodes_filtered, labels)
-				
-				i += 1
-
-			cnntd_cmpnts_similarity = sorted(cnntd_cmpnts_similarity.items(), key = lambda item: item[1], reverse = True)
-
-			cnntd_cmpnts = []
-			cnntd_cmpnts_id = []
-			cnntd_cmpnts_sim_dict = {}
-
-			simi_map = {}
-			for component_id, similarity in cnntd_cmpnts_similarity:
-				cnntd_cmpnts.append(self.exemplar_knn_maps[component_id])
-				cnntd_cmpnts_id.append(component_id)
-				cnntd_cmpnts_sim_dict[component_id] = similarity
-
-			return cnntd_cmpnts, simi_map
-		
-
 
 if __name__ == '__main__':
 	search_nodes = [1, 799, 1854]
@@ -404,5 +423,8 @@ if __name__ == '__main__':
 	s.min_nodes_threshold(3)
 	s.max_nodes_threshold(10)
 	s.exemplar(search_nodes)
-	res = s.search()
-	print(res)
+	s.search()
+	connected_components = s.get_knn_connected_components()
+	connected_components_similarity = s.get_connected_components_similarity()
+	print(connected_components)
+	print(connected_components_similarity)
