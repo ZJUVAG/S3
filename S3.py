@@ -326,7 +326,6 @@ class S3():
 		
 		cnntd_cmpnts_similarity = sorted(cnntd_cmpnts_similarity.items(), key = lambda item: item[1], reverse = True)
 
-		r = {}
 		cnntd_cmpnts = []
 		cnntd_cmpnts_id = []
 		cnntd_cmpnts_sim_dict = {}
@@ -342,7 +341,7 @@ class S3():
 			zzz += float(v)
 		if simi_map:
 			zzz = zzz / len(simi_map)
-		return r, self.exemplar_compound_graph, knn_compound_graphs, simi_map, zzz, knn_connected_components
+		return cnntd_cmpnts, self.exemplar_compound_graph, knn_compound_graphs, simi_map, zzz, knn_connected_components
 
 
 if __name__ == '__main__':
