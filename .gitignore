@@ -1,4 +1,7 @@
-data
+data/author_ma
+data/authors.csv
+data/graphlets_test_csv.npz
+data/relations.csv
 __pycache__
 .idea
 fun
