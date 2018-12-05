@@ -28,14 +28,21 @@ class S3():
 	def __init__(self, matrix, embedding):
 		self.matrix = matrix
 		self.embedding = embedding
+		
+		# parameters
 		self.min_nodes_thrsd = 5 # min nodes count threshold of the detected structure
 		self.max_nodes_thrsd = 100 # max nodes count threshold of the detected structure
 		self.sim_thrsd = 0.99
 		self.k = 100
 		self.epsilon = 0.01
+		
+		# exemplar
 		self.exemplar_nodes = []
 		self.exemplar_vectors = []
 		self.exemplar_compound_graph = None
+
+		# knn
+		self.knn_nodes = None
 
 	def set_k(self, k):
 		self.k = k
@@ -52,13 +59,13 @@ class S3():
 	def exemplar(self, nodes):
 		self.exemplar_nodes = nodes
 		self.exemplar_compound_graph = None
+		self.knn_nodes = None
 		self.exemplar_vectors_list = []
 		self.exemplar_vectors_dict = {}
 		for i in nodes:
 			vector = self.embedding[i]
 			self.exemplar_vectors_dict[i] = vector
-			self.exemplar_vectors_list.append(vector)
-
+			self.exemplar_vectors_list.append(vector)		
 
 	def __exemplar_dbscan__(self):
 		dbs = DBSCAN(eps = self.epsilon, min_samples = 2,
@@ -106,6 +113,9 @@ class S3():
 		if self.exemplar_compound_graph is not None:
 			return self.exemplar_compound_graph
 		
+		if self.exemplar_nodes is None or len(self.exemplar_nodes) <= 0:
+			return None
+		
 		nodes = list(map(lambda x: int(x), self.exemplar_nodes))
 		compound_graph = {'nodes': [], 'links': []}
 		label_arr = self.__exemplar_dbscan__()
@@ -136,6 +146,31 @@ class S3():
 
 		self.exemplar_compound_graph = compound_graph
 		return compound_graph
+
+	def get_knn_nodes(self):
+		if self.knn_nodes is not None:
+			return self.knn_nodes
+		if self.exemplar_nodes is None or len(self.exemplar_nodes) <= 0:
+			return None
+		# find the knns of search nodes
+		# ? some problem with the n_neighbors parameter
+		nbrs = NearestNeighbors(n_neighbors = len(self.embedding), algorithm = "auto", metric = 'cosine').fit(self.embedding)
+		distances, knn_nodes = nbrs.kneighbors(self.exemplar_vectors_list)
+		max_dis = np.max(distances)
+		min_dis = np.min(distances)
+
+		# filter out some unsimilar nodes
+		knn_nodes_set = set([])
+		for i in range(len(self.exemplar_nodes)):
+			# Find the most like elements of the first (1-self.sim_thrsd)
+			# ? some problem with the meaning the sim_thrsd(cos_min)
+			index = binary_search(distances[i], (max_dis - min_dis) * (1 - self.sim_thrsd) + min_dis)
+			if index > self.k:
+				index = self.k
+			knn_nodes_set = knn_nodes_set | set(knn_nodes[i][0:index])
+
+		self.knn_nodes = list(knn_nodes_set)
+		return self.knn_nodes
 
 	def compute_connected_components(self, nodes_list):
 		""" get the connected components with given nodes list
@@ -267,24 +302,8 @@ class S3():
 		return exemplar_knn_maps, knn_exemplar_maps
 	
 	def search(self):
-		# find the knns of search nodes
-		# ? some problem with the n_neighbors parameter
-		nbrs = NearestNeighbors(n_neighbors = len(self.embedding), algorithm = "auto", metric = 'cosine').fit(self.embedding)
-		distances, knn_nodes = nbrs.kneighbors(self.exemplar_vectors_list)
-		max_dis = np.max(distances)
-		min_dis = np.min(distances)
-
-		# filter out some unsimilar nodes
-		knn_nodes_set = set([])
-		for i in range(len(self.exemplar_nodes)):
-			# Find the most like elements of the first (1-self.sim_thrsd)
-			# ? some problem with the meaning the sim_thrsd(cos_min)
-			index = binary_search(distances[i], (max_dis - min_dis) * (1 - self.sim_thrsd) + min_dis)
-			if index > self.k:
-				index = self.k
-			knn_nodes_set = knn_nodes_set | set(knn_nodes[i][0:index])
+		self.exemplar_compound_graph = self.get_exemplar_compound_graph() # dbscan cluster
 		
-		self.exemplar_compound_graph = self.get_exemplar_compound_graph()
 		# set each exemplar node's label: the compound graph node which it belongs to
 		exemplar_nodes_label = {}
 		for i in range(len(self.exemplar_compound_graph['nodes'])):
@@ -292,7 +311,8 @@ class S3():
 				exemplar_nodes_label[j] = i
 
 		
-		knn_connected_components = self.compute_connected_components(list(set(knn_nodes_set)))
+		self.knn_nodes = self.get_knn_nodes()
+		knn_connected_components = self.compute_connected_components(self.knn_nodes)
 		exemplar_knn_maps, knn_exemplar_maps = self.map_to_exemplar(knn_connected_components)
 		
 		# compound graph for each connected components
@@ -341,7 +361,7 @@ class S3():
 			zzz += float(v)
 		if simi_map:
 			zzz = zzz / len(simi_map)
-		return cnntd_cmpnts, self.exemplar_compound_graph, knn_compound_graphs, simi_map, zzz, knn_connected_components
+		return cnntd_cmpnts, knn_compound_graphs, simi_map, zzz, knn_connected_components
 
 
 if __name__ == '__main__':
