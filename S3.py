@@ -369,7 +369,9 @@ class S3():
 					exemplar_nodes_label[j] = i
 
 			# compound graph for each connected components
-			knn_compound_graphs = [[]] * len(self.knn_connected_components)
+			knn_compound_graphs = []
+			for x in self.knn_connected_components:
+				knn_compound_graphs.append([])
 			for i, exemplar_knn_map in self.exemplar_knn_maps.items(): # exemplar_knn_map.keys(): exemplar_node, exemplar_knn_map.values(): knn nodes
 				i = int(i) # i is the sequence of the connected components
 				for node in self.exemplar_compound_graph['nodes']:
@@ -449,4 +451,3 @@ if __name__ == '__main__':
 	
 	exemplar_knn_maps = s.get_exemplar_to_knn_nodes_maps()
 	knn_exemplar_maps = s.get_knn_nodes_to_exemplar_maps()
-	knn_compound_graphs = s.get_knn_compound_graphs()
