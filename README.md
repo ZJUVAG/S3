@@ -19,7 +19,7 @@ Some Python libraries:
 
 Map the given exemplar into vector space(embedding space, should be calculated in advance), it means that we can get a vector for each exemplar node from the graph embedding result. 
 
-![Dec-06-2018 10-46-43](http://jackie-image.oss-cn-hangzhou.aliyuncs.com/S3image1.gif)
+![image-20181206165518264](http://jackie-image.oss-cn-hangzhou.aliyuncs.com/image-20181206165518264.png)
 
 #### Step 2: compute compound graph(cluster)
 
@@ -27,7 +27,7 @@ Perform clustering algorithm(DBScan) to cluster the exemplar nodes into a compou
 
 As we can see, the 4 exemplar nodes now turn to a compound graph with 3 compound nodes(clusters).
 
-![Dec-06-2018 10-56-01](http://jackie-image.oss-cn-hangzhou.aliyuncs.com/S3image2.gif)
+![image-20181206165549446](http://jackie-image.oss-cn-hangzhou.aliyuncs.com/image-20181206165549446.png)
 
 #### Step 3: find knn nodes
 
