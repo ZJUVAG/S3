@@ -19,7 +19,7 @@ Some Python libraries:
 
 Map the given exemplar into vector space(embedding space, should be calculated in advance), it means that we can get a vector for each exemplar node from the graph embedding result. 
 
-![Dec-06-2018 10-46-43](./assets/Dec-06-2018 10-46-43.gif)
+![Dec-06-2018 10-46-43](http://jackie-image.oss-cn-hangzhou.aliyuncs.com/Dec-06-2018 10-46-43.gif)
 
 #### Step 2: compute compound graph(cluster)
 
@@ -27,25 +27,25 @@ Perform clustering algorithm(DBScan) to cluster the exemplar nodes into a compou
 
 As we can see, the 4 exemplar nodes now turn to a compound graph with 3 compound nodes(clusters).
 
-![Dec-06-2018 10-56-01](./assets/Dec-06-2018 10-56-01.gif)
+![Dec-06-2018 10-56-01](http://jackie-image.oss-cn-hangzhou.aliyuncs.com/Dec-06-2018 10-56-01.gif)
 
 #### Step 3: find knn nodes
 
 Use k nearest neighbor algorithm to find candidate nodes that are similar to the nodes in the exemplar.
 
-![image-20181206105958593](./assets/image-20181206105958593.png)
+![image-20181206105958593](http://jackie-image.oss-cn-hangzhou.aliyuncs.com/image-20181206105958593.png)
 
 #### Step4: extract connected components
 
 Extract the connected components from the candidate nodes. Since we have compound graph(clusters) generated before, each node in the connected components will be classified into one compound node(cluster), according to the distance between the node and the clusters.
 
-![image-20181206110325811](./assets/image-20181206110325811.png)
+![image-20181206110325811](http://jackie-image.oss-cn-hangzhou.aliyuncs.com/image-20181206110325811.png)
 
 #### Step5: filter and rank
 
 Filter out components that have too many or too few nodes ,and sort the remaining components according to their similarities to the specified exemplar. After that we get the results which are considered to be similar to the exemplar.
 
-![image-20181206111455600](./assets/image-20181206111455600.png)
+![image-20181206111455600](http://jackie-image.oss-cn-hangzhou.aliyuncs.com/image-20181206111455600.png)
 
 
 
@@ -87,7 +87,7 @@ use `S3.parameter()` to get the value of a parameter, such as `S3.k()`, and use 
 
 - `search()` : begin to search the similar structures
 
-- `get_exemplar_compound_graph()`: get the compound graph of exemplar after perform clustering algorith ([Approach Details step 2]), the result looks like this: 
+- `get_exemplar_compound_graph()`: get the compound graph of exemplar after perform clustering algorith ([Approach Details step 2](https://github.com/ZJUVAG/S3#step-2-compute-compound-graphcluster)), the result looks like this: 
 
   ```javascript
   {
@@ -108,17 +108,17 @@ use `S3.parameter()` to get the value of a parameter, such as `S3.k()`, and use 
 
   it repsents a compound graph like this:
 
-  ![image-20181206151649219](./assets/image-20181206151649219.png)
+  ![image-20181206151649219](http://jackie-image.oss-cn-hangzhou.aliyuncs.com/image-20181206151649219.png)
 
-- `get_knn_nodes()`: get the list of knn nodes of exemplar according to the embedding results (Approach Details step 3)，result looks like this:  `[1, 3, 21, 43, 657, ...]`
+- `get_knn_nodes()`: get the list of knn nodes of exemplar according to the embedding results ([Approach Details step 3](https://github.com/ZJUVAG/S3#step-3-find-knn-nodes))，result looks like this:  `[1, 3, 21, 43, 657, ...]`
 
-- `get_knn_connected_components()`: extract the connected components (Approach Details step 4)
+- `get_knn_connected_components()`: extract the connected components ([Approach Details step 4](https://github.com/ZJUVAG/S3#step4-extract-connected-components))
 
   ```python
   [
       [1, 799, 1854, 1472, 1856, 1857], # nodes of connected component 0
-  	[292, 293, 294, 295, 296, 297], # nodes of connected component 1
-  	...
+      [292, 293, 294, 295, 296, 297], # nodes of connected component 1
+      ...
   ]
   ```
 
@@ -127,9 +127,9 @@ use `S3.parameter()` to get the value of a parameter, such as `S3.k()`, and use 
     ```python
     [
         (4, 1.0), #(connected components index, similarity)
-    	(0, 0.5477225575051661),
-    	(2, 0.5103103630798288),
-    	...
+        (0, 0.5477225575051661),
+        (2, 0.5103103630798288),
+        ...
     ]
     ```
 
@@ -154,12 +154,12 @@ use `S3.parameter()` to get the value of a parameter, such as `S3.k()`, and use 
     ```python
     {
         0: {799: 1, 1857: 799, 1: 1854, 1854: 1, 1856: 799, 1472: 1854},
-     	1: {292: 1, 293: 799, 294: 1854, 295: 1, 296: 799, 297: 1854},
-     	2: {1707: 1, 3747: 799, 3158: 1854, 3749: 1, 3748: 799},
-     	3: {3076: 1, 3077: 799, 2904: 1854, 2905: 1},
-     	4: {3912: 1, 4104: 799, 3914: 1854},
-     	5: {371: 1, 1306: 799, 1307: 1854},
-     	6: {3615: 1, 2899: 799, 2908: 1854}
+        1: {292: 1, 293: 799, 294: 1854, 295: 1, 296: 799, 297: 1854},
+        2: {1707: 1, 3747: 799, 3158: 1854, 3749: 1, 3748: 799},
+        3: {3076: 1, 3077: 799, 2904: 1854, 2905: 1},
+        4: {3912: 1, 4104: 799, 3914: 1854},
+        5: {371: 1, 1306: 799, 1307: 1854},
+        6: {3615: 1, 2899: 799, 2908: 1854}
     }
     ```
 
