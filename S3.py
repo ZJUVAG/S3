@@ -33,8 +33,8 @@ class S3():
 		self.min_nodes_thrsd = 5 # min nodes count threshold of the detected structure
 		self.max_nodes_thrsd = 100 # max nodes count threshold of the detected structure
 		self.sim_thrsd = 0.99
-		self.k = 100
-		self.epsilon = 0.01
+		self._k = 100
+		self._epsilon = 0.01
 		
 		# exemplar
 		self.exemplar_nodes = []
@@ -48,18 +48,36 @@ class S3():
 		self.knn_exemplar_maps = None
 		self.knn_compound_graphs = None
 		self.connected_components_similarity = None
-
-	def set_k(self, k):
-		self.k = k
 	
-	def max_nodes_threshold(self, max):
-		self.max_nodes_thrsd = max
+	def k(self, k = None):
+		if k is None:
+			return self._k
+		else:
+			self._k = k
 	
-	def min_nodes_threshold(self, min):
-		self.min_nodes_thrsd = min
+	def max_nodes_threshold(self, max = None):
+		if max is None:
+			return self.max_nodes_thrsd
+		else:
+			self.max_nodes_thrsd = max
+	
+	def min_nodes_threshold(self, min = None):
+		if min is None:
+			return self.min_nodes_thrsd
+		else:
+			self.min_nodes_thrsd = min
 
-	def similarity_threshold(self, sim_thrsd):
-		self.sim_thrsd = sim_thrsd
+	def similarity_threshold(self, sim_thrsd = None):
+		if sim_thrsd is None:
+			return self.sim_thrsd
+		else:
+			self.sim_thrsd = sim_thrsd
+
+	def epsilon(self, epsilon = None):
+		if epsilon is None:
+			return self._epsilon
+		else:
+			self._epsilon = epsilon
 
 	def exemplar(self, nodes):
 		self.exemplar_nodes = nodes
@@ -78,7 +96,7 @@ class S3():
 			self.exemplar_vectors_list.append(vector)		
 
 	def __exemplar_dbscan__(self):
-		dbs = DBSCAN(eps = self.epsilon, min_samples = 2,
+		dbs = DBSCAN(eps = self._epsilon, min_samples = 2,
 					metric = 'euclidean', metric_params = None, algorithm = 'auto', leaf_size = 30, p = None,
 					n_jobs = 1).fit(self.exemplar_vectors_list)
 
@@ -99,7 +117,7 @@ class S3():
 		label_arr.extend(list(r.values()))
 		return label_arr
 	
-	def compute_connected_components(self, nodes_list):
+	def __compute_connected_components__(self, nodes_list):
 		""" get the connected components with given nodes list
 			filter out the components with too large size（ >= max_nodes_thrsd )
 			and the components with too small size ( < min_nodes_thrsd )
@@ -143,7 +161,7 @@ class S3():
 			connected_components_filtered.append(nodes_in_components)
 		return connected_components_filtered
 
-	def map_knn_connected_components_to_exemplar(self):
+	def __map_knn_connected_components_to_exemplar__(self):
 		""" map nodes in the knn connected components to exemplar nodes,
 			establish correspondence between them
 
@@ -317,8 +335,8 @@ class S3():
 				# Find the most like elements of the first (1-self.sim_thrsd)
 				# ? some problem with the meaning the sim_thrsd(cos_min)
 				index = binary_search(distances[i], (max_dis - min_dis) * (1 - self.sim_thrsd) + min_dis)
-				if index > self.k:
-					index = self.k
+				if index > self._k:
+					index = self._k
 				knn_nodes_set = knn_nodes_set | set(knn_nodes[i][0:index])
 
 			self.knn_nodes = list(knn_nodes_set)
@@ -335,7 +353,7 @@ class S3():
 			if self.knn_nodes is None or len(self.knn_nodes) <= 0:
 				raise Exception('Cannot find kNN nodes!')
 			else:
-				self.knn_connected_components = self.compute_connected_components(self.knn_nodes)
+				self.knn_connected_components = self.__compute_connected_components__(self.knn_nodes)
 				return self.knn_connected_components
 	
 	def get_knn_compound_graphs(self):
@@ -396,12 +414,12 @@ class S3():
 	
 	def get_exemplar_to_knn_nodes_maps(self):
 		if self.exemplar_knn_maps is None:
-			self.exemplar_knn_maps, self.knn_exemplar_maps = self.map_knn_connected_components_to_exemplar()
+			self.exemplar_knn_maps, self.knn_exemplar_maps = self.__map_knn_connected_components_to_exemplar__()
 		return self.exemplar_knn_maps
 
 	def get_knn_nodes_to_exemplar_maps(self):
 		if self.knn_exemplar_maps is None:
-			self.exemplar_knn_maps, self.knn_exemplar_maps = self.map_knn_connected_components_to_exemplar()
+			self.exemplar_knn_maps, self.knn_exemplar_maps = self.__map_knn_connected_components_to_exemplar__()
 		return self.knn_exemplar_maps
 
 	def search(self):
@@ -410,7 +428,7 @@ class S3():
 			self.knn_nodes = self.get_knn_nodes()
 			self.knn_connected_components = self.get_knn_connected_components()
 			# establish correnspondence
-			self.exemplar_knn_maps, self.knn_exemplar_maps = self.map_knn_connected_components_to_exemplar()
+			self.exemplar_knn_maps, self.knn_exemplar_maps = self.__map_knn_connected_components_to_exemplar__()
 			self.connected_components_similarity = self.get_connected_components_similarity()
 		except Exception as error:
 			print(error)
@@ -428,6 +446,7 @@ if __name__ == '__main__':
 	knn_nodes = s.get_knn_nodes()
 	connected_components = s.get_knn_connected_components()
 	connected_components_similarity = s.get_connected_components_similarity()
-	knn_compound_graphs = s.get_knn_compound_graphs()
+	
 	exemplar_knn_maps = s.get_exemplar_to_knn_nodes_maps()
 	knn_exemplar_maps = s.get_knn_nodes_to_exemplar_maps()
+	knn_compound_graphs = s.get_knn_compound_graphs()
